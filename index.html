@@ -41,6 +41,10 @@ button.danger{background:transparent;color:#ff7b7b;border:1px solid #5b3030}
 .setno{height:48px;display:flex;align-items:center;justify-content:center;color:#aaa;font-weight:700}
 .setrow button.remove{height:48px;padding:0;background:#29292d;color:#bbb;font-size:20px}
 .setrow .field label{margin-bottom:5px}
+.catrow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.catbtn{padding:10px 4px;background:#29292d;color:#bbb;font-size:13px}.catbtn.active{background:#f5f5f7;color:#111}
+.savedTitle{font-size:13px;color:#aaa;margin:10px 0 7px}.savedList{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.savedEx{width:auto;padding:9px 12px;background:#29292d;color:#fff;font-size:14px}.savedEx.active{outline:2px solid #f5f5f7}
+.prev .prevline{margin-top:4px}.prev button{margin-top:9px;padding:9px;background:#34343a;color:#fff}
 </style>
 </head>
 <body>
@@ -59,8 +63,12 @@ button.danger{background:transparent;color:#ff7b7b;border:1px solid #5b3030}
 
   <div class="card">
     <h2>トレーニング</h2>
+    <label>部位</label>
+    <div class="catrow" id="categoryButtons"></div>
+    <div class="savedTitle">この部位で記録した種目</div>
+    <div class="savedList" id="savedExercises"></div>
     <label>種目</label>
-    <input id="exercise" list="exerciseList" placeholder="例 ベンチプレス" oninput="showPrevious()">
+    <input id="exercise" list="exerciseList" placeholder="例 ベンチプレス" oninput="exerciseTyped()">
     <datalist id="exerciseList"></datalist>
     <div id="previous"></div>
     <div id="setInputs" style="margin-top:12px"></div>
@@ -91,6 +99,7 @@ button.danger{background:transparent;color:#ff7b7b;border:1px solid #5b3030}
 
 <script>
 const WKEY='simpleGymWorkoutsV1', BKEY='simpleGymWeightV1';
+const CATS=['腕','胸','背中','足','その他']; let selectedCategory='胸';
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toLocaleDateString('sv-SE');
 $('date').value=today();
@@ -130,7 +139,7 @@ function saveWorkout(){
  if(!ex){alert('種目を入力してね');return}
  if(!sets.length||sets.some(s=>s.kg===''||s.reps==='')){alert('各セットの重量と回数を入力してね');return}
  const cleanSets=sets.map(s=>({kg:Number(s.kg),reps:Number(s.reps)}));
- let a=load(WKEY); a.unshift({id:Date.now(),date,ex,setsData:cleanSets}); store(WKEY,a);
+ let a=load(WKEY); a.unshift({id:Date.now(),date,ex,category:selectedCategory,setsData:cleanSets}); store(WKEY,a);
  resetSets(); render(); showPrevious(); alert('記録したよ');
 }
 function saveWeight(){
@@ -148,15 +157,41 @@ function workoutText(x){
  }
  return `${x.kg}kg × ${x.reps}回 × ${x.sets}セット`;
 }
+function getCategory(x){return x.category||'その他'}
+function selectCategory(cat){
+ selectedCategory=cat; renderCategories(); renderSavedExercises();
+}
+function renderCategories(){
+ $('categoryButtons').innerHTML=CATS.map(c=>`<button type="button" class="catbtn ${c===selectedCategory?'active':''}" onclick="selectCategory('${c}')">${c}</button>`).join('');
+}
+function renderSavedExercises(){
+ const w=load(WKEY);
+ const names=[...new Set(w.filter(x=>getCategory(x)===selectedCategory).map(x=>x.ex))];
+ const current=$('exercise').value.trim();
+ $('savedExercises').innerHTML=names.length?names.map(n=>`<button type="button" class="savedEx ${n===current?'active':''}" onclick="chooseExercise('${esc(n).replace(/'/g,'&#39;')}')">${esc(n)}</button>`).join(''):'<span class="muted">まだありません</span>';
+}
+function chooseExercise(name){
+ $('exercise').value=name; showPrevious(); renderSavedExercises();
+}
+function exerciseTyped(){showPrevious();renderSavedExercises()}
+function usePrevious(){
+ const ex=$('exercise').value.trim(),p=load(WKEY).find(x=>x.ex===ex); if(!p)return;
+ $('setInputs').innerHTML='';setCount=0;
+ if(Array.isArray(p.setsData))p.setsData.forEach(s=>addSet(s.kg,s.reps));
+ else for(let i=0;i<(p.sets||3);i++)addSet(p.kg,p.reps);
+}
 function showPrevious(){
  const ex=$('exercise').value.trim(); const p=load(WKEY).find(x=>x.ex===ex);
- $('previous').innerHTML=p?`<div class="prev">前回：${esc(p.date)}<br><b>${workoutText(p)}</b></div>`:'';
+ if(!p){$('previous').innerHTML='';return}
+ const lines=Array.isArray(p.setsData)?p.setsData.map((s,i)=>`<div class="prevline">${i+1}セット目　<b>${s.kg}kg × ${s.reps}回</b></div>`).join(''):`<div class="prevline"><b>${p.kg}kg × ${p.reps}回 × ${p.sets}セット</b></div>`;
+ $('previous').innerHTML=`<div class="prev">前回：${esc(p.date)}${lines}<button type="button" onclick="usePrevious()">前回の重量・回数を今回に入れる</button></div>`;
 }
 function render(){
  const w=load(WKEY);
  $('historyList').innerHTML=w.length?w.map(x=>`<div class="entry"><strong>${esc(x.ex)}</strong><div class="meta">${esc(x.date)}<br>${workoutText(x)}</div><button class="danger" style="margin-top:8px;padding:8px" onclick="delWorkout(${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ記録がありません</div>';
  const names=[...new Set(w.map(x=>x.ex))];
  $('exerciseList').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
+ renderCategories(); renderSavedExercises();
 
  const b=load(BKEY);
  const last=b[b.length-1];
