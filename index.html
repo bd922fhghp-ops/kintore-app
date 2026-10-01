@@ -37,6 +37,10 @@ button.danger{background:transparent;color:#ff7b7b;border:1px solid #5b3030}
 .page{display:none}.page.active{display:block}
 #chart{width:100%;height:160px;background:#111;border-radius:12px}
 .empty{color:#777;text-align:center;padding:18px}
+.setrow{display:grid;grid-template-columns:42px 1fr 1fr 42px;gap:8px;align-items:end;margin-bottom:10px}
+.setno{height:48px;display:flex;align-items:center;justify-content:center;color:#aaa;font-weight:700}
+.setrow button.remove{height:48px;padding:0;background:#29292d;color:#bbb;font-size:20px}
+.setrow .field label{margin-bottom:5px}
 </style>
 </head>
 <body>
@@ -59,12 +63,9 @@ button.danger{background:transparent;color:#ff7b7b;border:1px solid #5b3030}
     <input id="exercise" list="exerciseList" placeholder="例 ベンチプレス" oninput="showPrevious()">
     <datalist id="exerciseList"></datalist>
     <div id="previous"></div>
-    <div class="grid" style="margin-top:12px">
-      <div><label>重量 kg</label><input id="kg" type="number" inputmode="decimal" step="0.5" placeholder="40"></div>
-      <div><label>回数</label><input id="reps" type="number" inputmode="numeric" placeholder="10"></div>
-      <div><label>セット数</label><input id="sets" type="number" inputmode="numeric" value="3"></div>
-      <div><label>日付</label><input id="date" type="date"></div>
-    </div>
+    <div id="setInputs" style="margin-top:12px"></div>
+    <button class="secondary" style="margin-top:10px" onclick="addSet()">＋ セット追加</button>
+    <div style="margin-top:12px"><label>日付</label><input id="date" type="date"></div>
     <button style="margin-top:14px" onclick="saveWorkout()">記録する</button>
   </div>
 </section>
@@ -98,11 +99,39 @@ function load(k){try{return JSON.parse(localStorage.getItem(k))||[]}catch{return
 function store(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
+let setCount=0;
+function addSet(kg='',reps=''){
+ setCount++;
+ const row=document.createElement('div');
+ row.className='setrow';
+ row.innerHTML=`<div class="setno">${setCount}</div>
+   <div class="field"><label>重量 kg</label><input class="setkg" type="number" inputmode="decimal" step="0.5" placeholder="40" value="${kg}"></div>
+   <div class="field"><label>回数</label><input class="setreps" type="number" inputmode="numeric" placeholder="10" value="${reps}"></div>
+   <button class="remove" type="button" onclick="removeSet(this)">×</button>`;
+ $('setInputs').appendChild(row);
+ renumberSets();
+}
+function removeSet(btn){
+ if(document.querySelectorAll('.setrow').length<=1){alert('1セットは残してね');return}
+ btn.closest('.setrow').remove(); renumberSets();
+}
+function renumberSets(){
+ document.querySelectorAll('.setrow').forEach((r,i)=>r.querySelector('.setno').textContent=i+1);
+ setCount=document.querySelectorAll('.setrow').length;
+}
+function resetSets(){
+ $('setInputs').innerHTML=''; setCount=0;
+ addSet(); addSet(); addSet();
+}
 function saveWorkout(){
- const ex=$('exercise').value.trim(), kg=$('kg').value, reps=$('reps').value, sets=$('sets').value, date=$('date').value||today();
- if(!ex||kg===''||reps===''||sets===''){alert('種目・重量・回数・セット数を入力してね');return}
- let a=load(WKEY); a.unshift({id:Date.now(),date,ex,kg:Number(kg),reps:Number(reps),sets:Number(sets)}); store(WKEY,a);
- $('kg').value=''; $('reps').value=''; render(); showPrevious(); alert('記録したよ');
+ const ex=$('exercise').value.trim(), date=$('date').value||today();
+ const rows=[...document.querySelectorAll('.setrow')];
+ const sets=rows.map(r=>({kg:r.querySelector('.setkg').value,reps:r.querySelector('.setreps').value}));
+ if(!ex){alert('種目を入力してね');return}
+ if(!sets.length||sets.some(s=>s.kg===''||s.reps==='')){alert('各セットの重量と回数を入力してね');return}
+ const cleanSets=sets.map(s=>({kg:Number(s.kg),reps:Number(s.reps)}));
+ let a=load(WKEY); a.unshift({id:Date.now(),date,ex,setsData:cleanSets}); store(WKEY,a);
+ resetSets(); render(); showPrevious(); alert('記録したよ');
 }
 function saveWeight(){
  const v=$('weight').value;
@@ -113,13 +142,19 @@ function saveWeight(){
 function delWorkout(id){if(confirm('この記録を削除する？')){store(WKEY,load(WKEY).filter(x=>x.id!==id));render()}}
 function delWeight(id){if(confirm('この体重記録を削除する？')){store(BKEY,load(BKEY).filter(x=>x.id!==id));render()}}
 
+function workoutText(x){
+ if(Array.isArray(x.setsData)){
+   return x.setsData.map((s,i)=>`${i+1}セット目 ${s.kg}kg × ${s.reps}回`).join(' / ');
+ }
+ return `${x.kg}kg × ${x.reps}回 × ${x.sets}セット`;
+}
 function showPrevious(){
  const ex=$('exercise').value.trim(); const p=load(WKEY).find(x=>x.ex===ex);
- $('previous').innerHTML=p?`<div class="prev">前回：${esc(p.date)}　<b>${p.kg}kg × ${p.reps}回 × ${p.sets}セット</b></div>`:'';
+ $('previous').innerHTML=p?`<div class="prev">前回：${esc(p.date)}<br><b>${workoutText(p)}</b></div>`:'';
 }
 function render(){
  const w=load(WKEY);
- $('historyList').innerHTML=w.length?w.map(x=>`<div class="entry"><strong>${esc(x.ex)}</strong><div class="meta">${esc(x.date)}　${x.kg}kg × ${x.reps}回 × ${x.sets}セット</div><button class="danger" style="margin-top:8px;padding:8px" onclick="delWorkout(${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ記録がありません</div>';
+ $('historyList').innerHTML=w.length?w.map(x=>`<div class="entry"><strong>${esc(x.ex)}</strong><div class="meta">${esc(x.date)}<br>${workoutText(x)}</div><button class="danger" style="margin-top:8px;padding:8px" onclick="delWorkout(${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ記録がありません</div>';
  const names=[...new Set(w.map(x=>x.ex))];
  $('exerciseList').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
 
@@ -145,6 +180,7 @@ function tab(id,btn){
  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));btn.classList.add('active');if(id==='bodyweight')setTimeout(render,20);
 }
 window.addEventListener('resize',()=>drawChart(load(BKEY)));
+resetSets();
 render();
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');</script>
